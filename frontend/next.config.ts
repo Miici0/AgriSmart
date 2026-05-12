@@ -1,11 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  /* Altre opzioni qui */
   experimental: {
-    // any experimental features can go here
+    // Risolve i problemi di "Blocked cross-origin request" che possono rallentare il browser
+    allowedDevOrigins: ["localhost", "127.0.0.1", "100.108.208.33"],
   },
-  // Ensure that imports with @/ work correctly
 };
 
 export default nextConfig;
