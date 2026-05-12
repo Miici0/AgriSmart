@@ -16,6 +16,7 @@ class FarmTable(FarmBase, table=True):
 class UserBase(SQLModel):
     username: str
     role: str = "farmer" # farmer, employee
+    language: str = "it"
     farm_id: int = Field(foreign_key="farmtable.id")
 
 class UserTable(UserBase, table=True):
@@ -81,6 +82,7 @@ class VehicleDiagnosticTable(VehicleDiagnosticBase, table=True):
 class EmployeeBase(SQLModel):
     name: str
     role: str
+    language: str = "it"
     certifications: str # e.g., Patenti, Brevetti, Patentini
     farm_id: int = Field(foreign_key="farmtable.id")
 

@@ -1,23 +1,43 @@
 "use client"
 
-import { useState } from 'react'
-import { Plus, Tractor, Settings, X, Activity, Thermometer, Gauge } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Tractor, X, Activity, Thermometer, Gauge } from 'lucide-react'
+import { api } from '@/lib/api'
 
 export default function VehiclesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [vehicles, setVehicles] = useState([
-    { id: 1, name: 'John Deere 5075E', model: '2022 Utility', license_plate: 'AG-123-XY', device_id: 'TRACTOR_001', status: 'Active', rpm: 1850, temp: 82, speed: 14.5 },
-    { id: 2, name: 'New Holland T6', model: '2021 Performance', license_plate: 'AG-456-ZZ', device_id: 'TRACTOR_002', status: 'Active', rpm: 0, temp: 25, speed: 0 },
-  ])
-
+  const [vehicles, setVehicles] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [newVehicle, setNewVehicle] = useState({ name: '', model: '', license_plate: '', device_id: '' })
 
-  const handleAddVehicle = (e: React.FormEvent) => {
-    e.preventDefault()
-    setVehicles([...vehicles, { ...newVehicle, id: Date.now(), status: 'Active', rpm: 0, temp: 0, speed: 0 }])
-    setIsModalOpen(false)
-    setNewVehicle({ name: '', model: '', license_plate: '', device_id: '' })
+  useEffect(() => {
+    loadVehicles()
+  }, [])
+
+  async function loadVehicles() {
+    try {
+      const data = await api.getVehicles()
+      setVehicles(data)
+    } catch (error) {
+      console.error("Failed to load vehicles", error)
+    } finally {
+      setLoading(false)
+    }
   }
+
+  const handleAddVehicle = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await api.createVehicle({ ...newVehicle, farm_id: 0 }) // farm_id is handled by backend
+      setIsModalOpen(false)
+      setNewVehicle({ name: '', model: '', license_plate: '', device_id: '' })
+      loadVehicles()
+    } catch (error) {
+      console.error("Failed to add vehicle", error)
+    }
+  }
+
+  if (loading) return <div className="text-green-700">Loading vehicles...</div>
 
   return (
     <div className="space-y-6">
@@ -49,9 +69,9 @@ export default function VehiclesPage() {
               </div>
               <div className="text-right">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  vehicle.rpm > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  (vehicle.rpm || 0) > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                 }`}>
-                  {vehicle.rpm > 0 ? 'Online' : 'Idle'}
+                  {(vehicle.rpm || 0) > 0 ? 'Online' : 'Idle'}
                 </span>
               </div>
             </div>
@@ -60,21 +80,26 @@ export default function VehiclesPage() {
               <div className="flex flex-col items-center">
                 <Activity size={16} className="text-blue-500 mb-1" />
                 <span className="text-xs text-gray-500 uppercase font-semibold">RPM</span>
-                <span className="font-bold text-gray-900">{vehicle.rpm}</span>
+                <span className="font-bold text-gray-900">{vehicle.rpm || 0}</span>
               </div>
               <div className="flex flex-col items-center">
                 <Thermometer size={16} className="text-orange-500 mb-1" />
                 <span className="text-xs text-gray-500 uppercase font-semibold">Temp</span>
-                <span className="font-bold text-gray-900">{vehicle.temp}°C</span>
+                <span className="font-bold text-gray-900">{vehicle.temp || 25}°C</span>
               </div>
               <div className="flex flex-col items-center">
                 <Gauge size={16} className="text-purple-500 mb-1" />
                 <span className="text-xs text-gray-500 uppercase font-semibold">Speed</span>
-                <span className="font-bold text-gray-900">{vehicle.speed} km/h</span>
+                <span className="font-bold text-gray-900">{vehicle.speed || 0} km/h</span>
               </div>
             </div>
           </div>
         ))}
+        {vehicles.length === 0 && (
+          <div className="lg:col-span-2 text-center py-12 bg-white rounded-xl border border-dashed border-gray-300 text-gray-500">
+            No vehicles registered.
+          </div>
+        )}
       </div>
 
       {isModalOpen && (

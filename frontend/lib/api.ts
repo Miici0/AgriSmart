@@ -18,9 +18,13 @@ export async function fetchFromApi(endpoint: string, options: RequestInit = {}) 
 
 export const api = {
   getFields: () => fetchFromApi('/fields/'),
+  createField: (data: any) => fetchFromApi('/fields/', { method: 'POST', body: JSON.stringify(data) }),
   getSensors: () => fetchFromApi('/sensors/'),
   getVehicles: () => fetchFromApi('/vehicles/'),
+  createVehicle: (data: any) => fetchFromApi('/vehicles/', { method: 'POST', body: JSON.stringify(data) }),
   getEmployees: () => fetchFromApi('/employees/'),
+  createEmployee: (data: any) => fetchFromApi('/employees/', { method: 'POST', body: JSON.stringify(data) }),
+  updateEmployee: (id: number, data: any) => fetchFromApi(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   getRecommendations: () => fetchFromApi('/recommendations/'),
   getReadings: () => fetchFromApi('/readings/'),
   getDiagnostics: () => fetchFromApi('/diagnostics/'),

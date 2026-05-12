@@ -22,11 +22,18 @@ from auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES, oauth2_scheme, SECRET_KEY, ALGORITHM
 )
 from jose import jwt, JWTError
+import os
+from dotenv import load_dotenv
 
-sqlite_file_name = "database.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
-connect_args = {"check_same_thread": False}
-engine = create_engine(sqlite_url, connect_args=connect_args)
+load_dotenv()
+
+DB_USER = os.getenv("DB_USER", "AgriSmart")
+DB_PASS = os.getenv("DB_PASS", "tomaru")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "AgriSmart")
+
+mysql_url = f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}/{DB_NAME}"
+engine = create_engine(mysql_url)
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
@@ -85,7 +92,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/register/farm", response_model=UserTable)
-def register_farm(farm: FarmBase, username: str, password: str, session: Session = Depends(get_session)):
+def register_farm(farm: FarmBase, username: str, password: str, language: str = "it", session: Session = Depends(get_session)):
     db_farm = FarmTable.from_orm(farm)
     session.add(db_farm)
     session.commit()
@@ -95,7 +102,8 @@ def register_farm(farm: FarmBase, username: str, password: str, session: Session
         username=username,
         hashed_password=get_password_hash(password),
         farm_id=db_farm.id,
-        role="farmer"
+        role="farmer",
+        language=language
     )
     session.add(db_user)
     session.commit()
@@ -111,13 +119,63 @@ def read_fields(current_user: UserTable = Depends(get_current_user), session: Se
 
 @app.post("/fields/", response_model=FieldTable)
 def create_field(field: FieldBase, current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
-    if field.farm_id != current_user.farm_id:
-        raise HTTPException(status_code=403, detail="Not authorized for this farm")
+    # Force farm_id to match current_user
     db_field = FieldTable.from_orm(field)
+    db_field.farm_id = current_user.farm_id
     session.add(db_field)
     session.commit()
     session.refresh(db_field)
     return db_field
+
+@app.get("/sensors/", response_model=List[SensorTable])
+def read_sensors(current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
+    fields = session.exec(select(FieldTable).where(FieldTable.farm_id == current_user.farm_id)).all()
+    field_ids = [f.id for f in fields]
+    sensors = session.exec(select(SensorTable).where(SensorTable.field_id.in_(field_ids))).all()
+    return sensors
+
+@app.post("/sensors/", response_model=SensorTable)
+def create_sensor(sensor: SensorBase, current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
+    field = session.get(FieldTable, sensor.field_id)
+    if not field or field.farm_id != current_user.farm_id:
+        raise HTTPException(status_code=403, detail="Not authorized for this field")
+    db_sensor = SensorTable.from_orm(sensor)
+    session.add(db_sensor)
+    session.commit()
+    session.refresh(db_sensor)
+    return db_sensor
+
+@app.get("/readings/", response_model=List[SensorReadingTable])
+def read_sensor_readings(current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
+    fields = session.exec(select(FieldTable).where(FieldTable.farm_id == current_user.farm_id)).all()
+    field_ids = [f.id for f in fields]
+    sensors = session.exec(select(SensorTable).where(SensorTable.field_id.in_(field_ids))).all()
+    sensor_ids = [s.id for s in sensors]
+    readings = session.exec(select(SensorReadingTable).where(SensorReadingTable.sensor_id.in_(sensor_ids))).all()
+    return readings
+
+@app.post("/readings/", response_model=SensorReadingTable)
+def create_sensor_reading(reading: SensorReadingBase, current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
+    sensor = session.get(SensorTable, reading.sensor_id)
+    if not sensor:
+        raise HTTPException(status_code=404, detail="Sensor not found")
+    field = session.get(FieldTable, sensor.field_id)
+    if not field or field.farm_id != current_user.farm_id:
+        raise HTTPException(status_code=403, detail="Not authorized for this sensor")
+    
+    db_reading = SensorReadingTable.from_orm(reading)
+    session.add(db_reading)
+    session.commit()
+    session.refresh(db_reading)
+
+    # AI Analysis
+    recommendation = analyze_sensor_reading(db_reading, sensor.type)
+    if recommendation:
+        recommendation.farm_id = current_user.farm_id
+        session.add(recommendation)
+        session.commit()
+
+    return db_reading
 
 @app.get("/vehicles/", response_model=List[VehicleTable])
 def read_vehicles(current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
@@ -126,13 +184,19 @@ def read_vehicles(current_user: UserTable = Depends(get_current_user), session: 
 
 @app.post("/vehicles/", response_model=VehicleTable)
 def create_vehicle(vehicle: VehicleBase, current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
-    if vehicle.farm_id != current_user.farm_id:
-        raise HTTPException(status_code=403, detail="Not authorized for this farm")
     db_vehicle = VehicleTable.from_orm(vehicle)
+    db_vehicle.farm_id = current_user.farm_id
     session.add(db_vehicle)
     session.commit()
     session.refresh(db_vehicle)
     return db_vehicle
+
+@app.get("/diagnostics/", response_model=List[VehicleDiagnosticTable])
+def read_diagnostics(current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
+    vehicles = session.exec(select(VehicleTable).where(VehicleTable.farm_id == current_user.farm_id)).all()
+    vehicle_ids = [v.id for v in vehicles]
+    diagnostics = session.exec(select(VehicleDiagnosticTable).where(VehicleDiagnosticTable.vehicle_id.in_(vehicle_ids))).all()
+    return diagnostics
 
 @app.get("/employees/", response_model=List[EmployeeTable])
 def read_employees(current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
@@ -141,9 +205,24 @@ def read_employees(current_user: UserTable = Depends(get_current_user), session:
 
 @app.post("/employees/", response_model=EmployeeTable)
 def create_employee(employee: EmployeeBase, current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
-    if employee.farm_id != current_user.farm_id:
-        raise HTTPException(status_code=403, detail="Not authorized for this farm")
     db_employee = EmployeeTable.from_orm(employee)
+    db_employee.farm_id = current_user.farm_id
+    session.add(db_employee)
+    session.commit()
+    session.refresh(db_employee)
+    return db_employee
+
+@app.put("/employees/{employee_id}", response_model=EmployeeTable)
+def update_employee(employee_id: int, employee_update: EmployeeBase, current_user: UserTable = Depends(get_current_user), session: Session = Depends(get_session)):
+    db_employee = session.get(EmployeeTable, employee_id)
+    if not db_employee or db_employee.farm_id != current_user.farm_id:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    employee_data = employee_update.dict(exclude_unset=True)
+    for key, value in employee_data.items():
+        setattr(db_employee, key, value)
+    
+    db_employee.farm_id = current_user.farm_id # Ensure farm_id cannot be changed
     session.add(db_employee)
     session.commit()
     session.refresh(db_employee)

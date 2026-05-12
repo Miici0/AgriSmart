@@ -18,19 +18,19 @@ export default function Dashboard() {
     async function loadData() {
       try {
         const [fields, sensors, vehicles, employees, recommendations] = await Promise.all([
-          api.getFields(),
-          api.getSensors(),
-          api.getVehicles(),
-          api.getEmployees(),
-          api.getRecommendations()
+          api.getFields().catch(() => []),
+          api.getSensors().catch(() => []),
+          api.getVehicles().catch(() => []),
+          api.getEmployees().catch(() => []),
+          api.getRecommendations().catch(() => [])
         ])
         
         setStats({
-          fields: fields.length,
-          sensors: sensors.length,
-          vehicles: vehicles.length,
-          employees: employees.length,
-          recommendations: recommendations
+          fields: fields?.length || 0,
+          sensors: sensors?.length || 0,
+          vehicles: vehicles?.length || 0,
+          employees: employees?.length || 0,
+          recommendations: Array.isArray(recommendations) ? recommendations : []
         })
       } catch (error) {
         console.error("Failed to load dashboard data", error)
